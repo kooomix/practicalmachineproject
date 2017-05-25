@@ -1,0 +1,139 @@
+---
+title: "Prediction Assignment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this document, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Executive Summary
+
+In this document we will describe the process of generating a prediction model to predict user activity quality using the Random Forest statistic model. We will show we can fit a model which can predict with a sample error of less than 2%.</br>
+
+
+## Download and Load Data
+
+The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r download, eval=FALSE}
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "Prediction/pml-training.csv")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "Prediction/pml-testing.csv")
+```
+
+```{r load data, cache=TRUE}
+training <- read.csv("pml-training.csv", na.strings=c("","#DIV/0!","NA"))
+testing <- read.csv("pml-testing.csv", na.strings=c("","#DIV/0!","NA"))
+```
+
+## Exploratory Data
+```{r Explore Data}
+dim(training);dim(testing)
+```
+
+We have in the training dataset 19262 observations and in the testing dataset 20 observations. Each dataset has 160 features so we will try to find the best features to be used as a basis for out prediction model. </br>
+
+
+## Data Overview
+First, let's understand what kind of variables we have (using the help of [this paper](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf)):
+
+Understanding the columns: </br>
+Euler angles (roll, pitch, yaw) per sensors (arm,belt,dumbbel,forearm) = 12 columns </br>
+Euler angles (roll, pitch, yaw) per sensors (arm,belt,dumbbel,forearm) per feature (mean, variance, standard deviation, max, min, amplitude, kurtosis and skewness) = 96 features. </br>
+Raw accelerometer, gyroscope and magnetometer per sensor = 36 </br>
+total and variance for the accelerometer per sensors = 8 </br>
+Additional columns: X - serail number, User_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window, classe </br></br>
+
+Exploring observations: </br>
+Let's first make sure to handle NA values:
+
+```{r finding NAs}
+ncol(training[,colSums(is.na(training))> (nrow(training)*0.9)])
+```
+
+We  see there are 100 features with over 90% of the data NA. As such features wouldn't contribute our prediction, we will remove them from our training dataset. </br></br>
+
+We can also remove columns 1:7 as they are not related to the prediction.</br>
+
+```{r remove NAs and unrelated features}
+training <- training[,-c(1:7)]
+colHighNa <- names(training[,colSums(is.na(training))> (nrow(training)*0.9)])
+training <- training[,!names(training) %in% colHighNa]
+```
+
+
+## Feature selection
+
+We are left with 53 features; we will try to reduce this number by removing highly correlated features. We will cutoff the features on 70% correlation. </br>
+
+We can see in the next figure the difference between the correlated and uncorrelated schemes. We will remove the correlated features, leaving us with 31 features for prediction.
+
+```{r}
+library(caret)
+set.seed(24356)
+correlationMatrix <- cor(training[,c(-53)])
+colCor <- findCorrelation(correlationMatrix, cutoff = 0.70, exact=TRUE)
+par(mfrow=c(1,2))
+training <- training[,-colCor]
+
+```
+
+## Cross Validation Datasets
+
+We will now partition our training set into trainingA (75% of data) and testingA (25% of data). The trainingA dataset will be used for the prediction analysis that will be cross-validated against testingA dataset.
+
+```{r Generate datasets for analysis}
+inTrain <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
+trainingA <- training[inTrain,]
+testingA <- training[-inTrain,]
+dim(trainingA)
+
+```
+
+
+## Random Forest
+
+### Fit the model and check sample error
+
+We will use the Random Forest prediction model on the trainingA set. The next figure shows we are in a sample error that is much less then 5% which is of course wonderful. Summary of our model gives a more accurate number, 1.13% sample error.
+
+```{r random forest, cache=FALSE}
+library(randomForest)
+fit_rf <- randomForest(classe~.,trainingA,ntree=500)
+par(mfrow=c(1,1))
+plot(fit_rf, main="Sample error by trees")
+fit_rf
+```
+
+
+### Cross validate Model
+
+We will now test the model we've fitted against the testingA dataset:
+
+```{r cross-validate}
+
+predTestingA <- predict(fit_rf, newdata=testingA)
+confusionMatrix(predTestingA, testingA$classe)
+```
+Confusion Matrix shows a 99% accuracy for our model when used against our testingA dataset.s
+
+### Prediction against testing dataset
+
+```{r prediction}
+predTesting <- predict(fit_rf,newdata=testing)
+predTesting
+
+```
+
+
+
+
+
+
+
